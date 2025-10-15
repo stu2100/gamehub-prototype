@@ -4,86 +4,64 @@ import json
 SERVER_HOST = "127.0.0.1"
 SERVER_PORT = 5000
 
+# --- Helper to send request to server ---
 def send_request(request_dict):
-    """Send a JSON request to the server and return the response."""
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.connect((SERVER_HOST, SERVER_PORT))
             s.sendall(json.dumps(request_dict).encode())
-
             data = s.recv(8192)
             if not data:
-                print("No response from server.")
+                print("No response from server")
                 return None
-
-            response = json.loads(data.decode())
-            return response
-
-    except ConnectionRefusedError:
-        print("Error: Could not connect to the server. Is it running?")
-        return None
+            return json.loads(data.decode())
     except Exception as e:
-        print(f"Error: {e}")
+        print("Error:", e)
         return None
 
-
-def display_dashboard():
+# --- Dashboard display ---
+def show_dashboard():
     response = send_request({"action": "list_dashboard"})
-    if not response or response.get("status") != "success":
-        print("Failed to fetch dashboard.")
+    if not response:
         return
 
-    users = response.get("users", [])
-    games = response.get("games", [])
-    rentals = response.get("rentals", [])
+    print("\n=== USERS ===")
+    for u in response.get("users", []):
+        print(f"ID: {u.get('user_id', 'N/A')}, Name: {u.get('name', 'N/A')}")
 
-    print("\n🎮 GameHub Dashboard\n")
+    print("\n=== GAMES ===")
+    for g in response.get("games", []):
+        game_id = g.get("game_id", "N/A")
+        title = g.get("title", "N/A")
+        stock = g.get("stock", "N/A")
+        available = g.get("available", "N/A")
+        print(f"ID: {game_id}, Title: {title}, Stock: {stock}, Available: {available}")
 
-    print("📌 Users:")
-    if users:
-        for u in users:
-            print(f"  ID: {u['user_id']} | Name: {u['name']}")
-    else:
-        print("  No users found.")
+    print("\n=== RENTALS ===")
+    for r in response.get("rentals", []):
+        rental_id = r.get("rental_id", "N/A")
+        user_id = r.get("user_id", "N/A")
+        game_id = r.get("game_id", "N/A")
+        returned = r.get("returned", "N/A")
+        late_fee = r.get("late_fee", "N/A")
+        due_date = r.get("due_date", "N/A")
+        print(f"Rental ID: {rental_id}, User ID: {user_id}, Game ID: {game_id}, Returned: {returned}, Late Fee: ${late_fee}, Due: {due_date}")
 
-    print("\n🎲 Games:")
-    if games:
-        for g in games:
-            status = "Available" if g.get("available", True) else "Rented"
-            print(f"  ID: {g['game_id']} | Title: {g['title']} | Status: {status}")
-    else:
-        print("  No games found.")
-
-    print("\n📋 Rentals:")
-    if rentals:
-        for r in rentals:
-            returned = "Yes" if r.get("returned") else "No"
-            print(f"  Rental ID: {r['rental_id']} | User ID: {r['user_id']} | Game ID: {r['game_id']} | Returned: {returned}")
-    else:
-        print("  No rentals found.")
-
-    print("\n---------------------------\n")
-
-
+# --- Main menu ---
 def main():
-    print("🎮 GameHub Dashboard Client (receive.py)")
-    print("Connected to server at", f"{SERVER_HOST}:{SERVER_PORT}")
-
     while True:
-        print("\nOptions:")
-        print("1. Show Dashboard")
+        print("\n--- GameHub Dashboard ---")
+        print("1. Show dashboard")
         print("2. Exit")
 
-        choice = input("Enter choice (1–2): ")
-
+        choice = input("Enter choice: ").strip()
         if choice == "1":
-            display_dashboard()
+            show_dashboard()
         elif choice == "2":
-            print("Exiting client.")
+            print("Exiting...")
             break
         else:
-            print("Invalid choice. Try again.")
-
+            print("Invalid choice, try again")
 
 if __name__ == "__main__":
     main()
