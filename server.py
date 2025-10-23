@@ -1,177 +1,165 @@
 import socket
 import json
-from threading import Thread
-from datetime import datetime, timedelta
+import datetime
+import logging
+import threading
+import re
 
-class GameHubServer:
-    def __init__(self, host="127.0.0.1", port=5000):
-        self.host = host
-        self.port = port
-        self.users = {}
-        self.games = {}
-        self.rentals = {}
-        self.next_user_id = 1
-        self.next_game_id = 1
-        self.next_rental_id = 1
+# --- Logging setup ---
+logging.basicConfig(filename="server_log.txt", level=logging.INFO,
+                    format="%(asctime)s - %(message)s")
 
-    def start(self):
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.bind((self.host, self.port))
-        server_socket.listen(5)
-        print(f"Server started on {self.host}:{self.port}")
+# --- Server data ---
+users = []
+games = []
+rentals = []
 
+next_user_id = 1
+next_game_id = 1
+next_rental_id = 1
+
+# --- Basic authentication for admin clients ---
+VALID_USERS = {
+    "admin": "password123",
+    "tester": "gamehub"
+}
+
+# --- Helper functions ---
+def calculate_late_fee(rental):
+    if rental.get("returned") and rental.get("due_date"):
+        due = datetime.datetime.strptime(rental["due_date"], "%Y-%m-%d")
+        returned = datetime.datetime.strptime(rental["return_date"], "%Y-%m-%d")
+        days_late = (returned - due).days
+        return max(0, days_late * 2)  # $2 per day late
+    return 0
+
+def handle_client(client_socket, address):
+    global next_user_id, next_game_id, next_rental_id
+    try:
+        # --- Authentication ---
+        auth_data = client_socket.recv(1024).decode()
+        auth_json = json.loads(auth_data)
+        logging.info(f"Received (auth): {auth_json}")
+
+        if auth_json.get("type") != "auth" or \
+           auth_json.get("username") not in VALID_USERS or \
+           auth_json.get("password") != VALID_USERS[auth_json["username"]]:
+            response = {"status": "error", "message": "Authentication failed"}
+            client_socket.send(json.dumps(response).encode())
+            client_socket.close()
+            return
+        else:
+            client_socket.send(json.dumps({"status": "ok", "message": "Authenticated"}).encode())
+
+        # --- Handle requests ---
         while True:
-            client_socket, addr = server_socket.accept()
-            Thread(target=self.handle_client, args=(client_socket, addr)).start()
-
-    def handle_client(self, client_socket, addr):
-        try:
             data = client_socket.recv(8192)
             if not data:
-                client_socket.close()
-                return
+                break
 
-            request = json.loads(data.decode())
-            response = self.handle_request(request)
-            client_socket.sendall(json.dumps(response).encode())
-        except Exception as e:
-            print(f"Error handling client {addr}: {e}")
-        finally:
-            client_socket.close()
+            try:
+                request = json.loads(data.decode())
+                logging.info(f"Received: {request}")
 
-    def handle_request(self, request):
-        action = request.get("action")
-        response = {"status": "error", "message": "Unknown action"}
+                action = request.get("action")
 
-        # ---- Add User ----
-        if action == "add_user":
-            name = request.get("name")
-            if not name:
-                response = {"status": "error", "message": "Name is required"}
-            else:
-                user_id = self.next_user_id
-                self.users[user_id] = {"user_id": user_id, "name": name}
-                self.next_user_id += 1
-                response = {"status": "success", "message": f"User '{name}' added", "user_id": user_id}
+                # --- Commands ---
+                if action == "add_user":
+                    name = request.get("name")
+                    email = request.get("email")
+                    password = request.get("password")
+                    if not name or not email or not password:
+                        raise KeyError("name, email, or password missing")
+                    # Email validation
+                    pattern_email = r"^[\w\.-]+@[\w\.-]+\.\w+$"
+                    if not re.match(pattern_email, email):
+                        response = {"status": "error", "message": "Invalid email format"}
+                    else:
+                        # Password complexity check
+                        pattern_pw = r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$"
+                        if not re.match(pattern_pw, password):
+                            response = {"status": "error", "message": "Password must be at least 8 characters, include upper/lowercase, number, and special char"}
+                        else:
+                            user = {"user_id": next_user_id, "name": name, "email": email, "password": password}
+                            users.append(user)
+                            next_user_id += 1
+                            response = {"status": "ok", "message": f"User {name} added"}
 
-        # ---- Add Game ----
-        elif action == "add_game":
-            title = request.get("title")
-            stock = request.get("stock", 1)
-            if not title:
-                response = {"status": "error", "message": "Title is required"}
-            elif not isinstance(stock, int) or stock < 0:
-                response = {"status": "error", "message": "Invalid stock value"}
-            else:
-                game_id = self.next_game_id
-                self.games[game_id] = {
-                    "game_id": game_id,
-                    "title": title,
-                    "stock": stock,
-                    "available": stock > 0
-                }
-                self.next_game_id += 1
-                response = {"status": "success", "message": f"Game '{title}' added", "game_id": game_id}
+                elif action == "add_game":
+                    title = request.get("title")
+                    stock = request.get("stock")
+                    if title is None or stock is None:
+                        raise KeyError("title or stock missing")
+                    game = {"game_id": next_game_id, "title": title, "stock": stock, "available": True}
+                    games.append(game)
+                    next_game_id += 1
+                    response = {"status": "ok", "message": f"Game {title} added"}
 
-        # ---- Create Rental ----
-        elif action == "create_rental":
-            user_id = request.get("user_id")
-            game_id = request.get("game_id")
+                elif action == "create_rental":
+                    user_id = request.get("user_id")
+                    game_id = request.get("game_id")
+                    if user_id is None or game_id is None:
+                        raise KeyError("user_id or game_id missing")
+                    rental = {
+                        "rental_id": next_rental_id,
+                        "user_id": user_id,
+                        "game_id": game_id,
+                        "returned": False,
+                        "late_fee": 0,
+                        "due_date": (datetime.datetime.now() + datetime.timedelta(days=7)).strftime("%Y-%m-%d")
+                    }
+                    rentals.append(rental)
+                    next_rental_id += 1
+                    response = {"status": "ok", "message": f"Rental {rental['rental_id']} created"}
 
-            if user_id not in self.users:
-                response = {"status": "error", "message": f"User ID {user_id} not found"}
-            elif game_id not in self.games:
-                response = {"status": "error", "message": f"Game ID {game_id} not found"}
-            elif self.games[game_id]["stock"] <= 0:
-                response = {"status": "error", "message": f"Game ID {game_id} is out of stock"}
-            else:
-                rental_id = self.next_rental_id
-                self.rentals[rental_id] = {
-                    "rental_id": rental_id,
-                    "user_id": user_id,
-                    "game_id": game_id,
-                    "returned": False,
-                    "rental_date": datetime.now().isoformat(),
-                    "due_date": (datetime.now() + timedelta(days=7)).isoformat(),
-                    "late_fee": 0
-                }
-                self.games[game_id]["stock"] -= 1
-                self.games[game_id]["available"] = self.games[game_id]["stock"] > 0
-                self.next_rental_id += 1
-                response = {"status": "success", "message": "Rental created", "rental_id": rental_id}
+                elif action == "return_rental":
+                    rental_id = request.get("rental_id")
+                    if rental_id is None:
+                        raise KeyError("rental_id missing")
+                    rental = next((r for r in rentals if r["rental_id"] == rental_id), None)
+                    if rental:
+                        rental["returned"] = True
+                        rental["return_date"] = datetime.datetime.now().strftime("%Y-%m-%d")
+                        rental["late_fee"] = calculate_late_fee(rental)
+                        response = {"status": "ok", "message": f"Rental {rental_id} returned"}
+                    else:
+                        response = {"status": "error", "message": "Rental not found"}
 
-        # ---- Delete User ----
-        elif action == "delete_user":
-            user_id = request.get("user_id")
-            if user_id is None:
-                response = {"status": "error", "message": "user_id missing"}
-            elif user_id not in self.users:
-                response = {"status": "error", "message": f"User ID {user_id} not found"}
-            else:
-                del self.users[user_id]
-                response = {"status": "success", "message": f"User ID {user_id} deleted"}
+                elif action == "list_dashboard":
+                    response = {"users": users, "games": games, "rentals": rentals}
 
-        # ---- Delete Game ----
-        elif action == "delete_game":
-            game_id = request.get("game_id")
-            if game_id is None:
-                response = {"status": "error", "message": "game_id missing"}
-            elif game_id not in self.games:
-                response = {"status": "error", "message": f"Game ID {game_id} not found"}
-            else:
-                del self.games[game_id]
-                response = {"status": "success", "message": f"Game ID {game_id} deleted"}
+                else:
+                    response = {"status": "error", "message": "Unknown action"}
 
-        # ---- Update Game Stock ----
-        elif action == "update_stock":
-            game_id = request.get("game_id")
-            new_stock = request.get("stock")
-            if game_id is None:
-                response = {"status": "error", "message": "game_id missing"}
-            elif game_id not in self.games:
-                response = {"status": "error", "message": f"Game ID {game_id} not found"}
-            elif not isinstance(new_stock, int) or new_stock < 0:
-                response = {"status": "error", "message": "Invalid stock value"}
-            else:
-                self.games[game_id]["stock"] = new_stock
-                self.games[game_id]["available"] = new_stock > 0
-                response = {"status": "success", "message": f"Game ID {game_id} stock updated to {new_stock}"}
+                logging.info(f"Responded: {response}")
+                client_socket.send(json.dumps(response).encode())
 
-        # ---- Return Rental ----
-        elif action == "return_rental":
-            rental_id = request.get("rental_id")
-            if rental_id not in self.rentals:
-                response = {"status": "error", "message": f"Rental ID {rental_id} not found"}
-            elif self.rentals[rental_id]["returned"]:
-                response = {"status": "error", "message": "Rental already returned"}
-            else:
-                rental = self.rentals[rental_id]
-                rental["returned"] = True
-                return_date = datetime.now()
-                due_date = datetime.fromisoformat(rental["due_date"])
-                days_late = (return_date - due_date).days
-                late_fee = max(0, days_late * 2)  # $2 per late day
-                rental["late_fee"] = late_fee
+            except KeyError as ke:
+                logging.error(f"Missing key: {ke}")
+                client_socket.send(json.dumps({"status": "error", "message": f"Missing key: {ke}"}).encode())
+            except Exception as e:
+                logging.error(f"Unhandled error: {e}")
+                client_socket.send(json.dumps({"status": "error", "message": "Server error"}).encode())
 
-                # Increment game stock
-                game_id = rental["game_id"]
-                if game_id in self.games:
-                    self.games[game_id]["stock"] += 1
-                    self.games[game_id]["available"] = True
+    except Exception as e:
+        logging.error(f"Error handling client {address}: {e}")
+    finally:
+        client_socket.close()
+        logging.info(f"Closed connection: {address}")
 
-                response = {"status": "success", "message": f"Rental returned. Late fee: ${late_fee}"}
+# --- Main server ---
+def main():
+    host = "0.0.0.0"
+    port = 5000
 
-        # ---- Dashboard / List ----
-        elif action == "list_dashboard":
-            response = {
-                "status": "success",
-                "users": list(self.users.values()),
-                "games": list(self.games.values()),
-                "rentals": list(self.rentals.values())
-            }
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.bind((host, port))
+    server.listen(5)
+    print(f"GameHub server running on {host}:{port}")
 
-        return response
+    while True:
+        client_socket, address = server.accept()
+        threading.Thread(target=handle_client, args=(client_socket, address)).start()
 
 if __name__ == "__main__":
-    server = GameHubServer()
-    server.start()
+    main()

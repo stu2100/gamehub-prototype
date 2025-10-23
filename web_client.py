@@ -2,122 +2,109 @@ from flask import Flask, render_template_string, request, redirect
 import socket
 import json
 
-SERVER_HOST = "127.0.0.1"
-SERVER_PORT = 5000
+HOST = "127.0.0.1"
+PORT = 5000
 
 app = Flask(__name__)
 
-# --- Helper function to communicate with server ---
-def send_request(request_dict):
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.connect((SERVER_HOST, SERVER_PORT))
-            s.sendall(json.dumps(request_dict).encode())
-            data = s.recv(8192)
-            if not data:
-                return {"status": "error", "message": "No response from server"}
-            return json.loads(data.decode())
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+USERNAME = ""
+PASSWORD = ""
 
-# --- Helper to format dashboard safely ---
+# --- Communication helper ---
+def send_request(data):
+    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    client.connect((HOST, PORT))
+    # Authenticate first
+    auth_request = {"type": "auth", "username": USERNAME, "password": PASSWORD}
+    client.send(json.dumps(auth_request).encode())
+    auth_response = json.loads(client.recv(1024).decode())
+    if auth_response.get("status") != "ok":
+        client.close()
+        raise Exception("Authentication failed: " + auth_response.get("message", ""))
+    # Send actual request
+    client.send(json.dumps(data).encode())
+    response = json.loads(client.recv(8192).decode())
+    client.close()
+    return response
+
+# --- Dashboard data ---
 def get_dashboard_data():
-    response = send_request({"action": "list_dashboard"})
-    dashboard_lines = []
-    users_list = []
-    games_list = []
+    try:
+        response = send_request({"action": "list_dashboard"})
+        return response
+    except Exception as e:
+        return {"users": [], "games": [], "rentals": [], "error": str(e)}
 
-    if not response:
-        dashboard_lines.append("Error fetching dashboard.")
-        return dashboard_lines, users_list, games_list
+# --- HTML Template ---
+TEMPLATE = """
+<!doctype html>
+<title>GameHub Web Client</title>
+<h1>GameHub Web Client</h1>
 
-    # Users
-    users_list = response.get("users", [])
-    dashboard_lines.append("=== USERS ===")
-    for u in users_list:
-        dashboard_lines.append(f"ID: {u.get('user_id', 'N/A')}, Name: {u.get('name', 'N/A')}")
+<h2>Create Rental</h2>
+<form method="post" action="/create_rental">
+  User: 
+  <select name="user_id">
+    {% for u in users %}
+      <option value="{{ u.user_id }}">{{ u.name }} (ID: {{ u.user_id }})</option>
+    {% endfor %}
+  </select>
+  Game: 
+  <select name="game_id">
+    {% for g in games %}
+      <option value="{{ g.game_id }}">{{ g.title }} (ID: {{ g.game_id }})</option>
+    {% endfor %}
+  </select>
+  <input type="submit" value="Create Rental">
+</form>
 
-    # Games
-    games_list = response.get("games", [])
-    dashboard_lines.append("\n=== GAMES ===")
-    for g in games_list:
-        game_id = g.get("game_id", "N/A")
-        title = g.get("title", "N/A")
-        stock = g.get("stock", "N/A")
-        available = g.get("available", "N/A")
-        dashboard_lines.append(f"ID: {game_id}, Title: {title}, Stock: {stock}, Available: {available}")
+<h2>Return Rental</h2>
+<form method="post" action="/return_rental">
+  Rental: 
+  <select name="rental_id">
+    {% for r in rentals %}
+      <option value="{{ r.rental_id }}">Rental {{ r.rental_id }}: User {{ r.user_id }} - Game {{ r.game_id }}</option>
+    {% endfor %}
+  </select>
+  <input type="submit" value="Return Rental">
+</form>
 
-    # Rentals
-    dashboard_lines.append("\n=== RENTALS ===")
-    for r in response.get("rentals", []):
-        rental_id = r.get("rental_id", "N/A")
-        user_id = r.get("user_id", "N/A")
-        game_id = r.get("game_id", "N/A")
-        returned = r.get("returned", "N/A")
-        late_fee = r.get("late_fee", "N/A")
-        due_date = r.get("due_date", "N/A")
-        dashboard_lines.append(
-            f"Rental ID: {rental_id}, User ID: {user_id}, Game ID: {game_id}, "
-            f"Returned: {returned}, Late Fee: ${late_fee}, Due: {due_date}"
-        )
+<h2>Dashboard</h2>
 
-    return dashboard_lines, users_list, games_list
-
-# --- HTML template ---
-template = """
-<!DOCTYPE html>
-<html>
-<head>
-    <title>GameHub Web Client</title>
-</head>
-<body>
-    <h1>GameHub Web Client</h1>
-
-    <h2>Create Rental</h2>
-    <form method="post" action="/create_rental">
-        User:
-        <select name="user_id">
-            {% for user in users %}
-            <option value="{{ user['user_id'] }}">{{ user['name'] }} (ID: {{ user['user_id'] }})</option>
-            {% endfor %}
-        </select>
-
-        Game:
-        <select name="game_id">
-            {% for game in games %}
-            <option value="{{ game['game_id'] }}">{{ game['title'] }} (ID: {{ game['game_id'] }})</option>
-            {% endfor %}
-        </select>
-
-        <input type="submit" value="Create Rental">
-    </form>
-
-    <h2>Return Rental</h2>
-    <form method="post" action="/return_rental">
-        Rental ID: <input type="text" name="rental_id">
-        <input type="submit" value="Return Rental">
-    </form>
-
-    <h2>Dashboard</h2>
-    <form method="get" action="/">
-        <input type="submit" value="Refresh Dashboard">
-    </form>
-
-    <pre>
-{% for line in dashboard %}
-{{ line }}
+<h3>Users</h3>
+<ul>
+{% for u in users %}
+  <li>ID: {{ u.user_id }}, Name: {{ u.name }}, Email: {{ u.email }}</li>
 {% endfor %}
-    </pre>
+</ul>
 
-</body>
-</html>
+<h3>Games</h3>
+<ul>
+{% for g in games %}
+  <li>ID: {{ g.game_id }}, Title: {{ g.title }}, Stock: {{ g.stock }}, Available: {{ g.available }}</li>
+{% endfor %}
+</ul>
+
+<h3>Rentals</h3>
+<ul>
+{% for r in rentals %}
+  <li>Rental ID: {{ r.rental_id }}, User ID: {{ r.user_id }}, Game ID: {{ r.game_id }}, Returned: {{ r.returned }}, Late Fee: ${{ r.late_fee }}, Due: {{ r.due_date }}</li>
+{% endfor %}
+</ul>
+
+{% if error %}
+<p style="color:red">Error: {{ error }}</p>
+{% endif %}
 """
 
 # --- Routes ---
 @app.route("/", methods=["GET"])
 def index():
-    dashboard_lines, users_list, games_list = get_dashboard_data()
-    return render_template_string(template, dashboard=dashboard_lines, users=users_list, games=games_list)
+    data = get_dashboard_data()
+    return render_template_string(TEMPLATE, users=data.get("users", []),
+                                  games=data.get("games", []),
+                                  rentals=data.get("rentals", []),
+                                  error=data.get("error", None))
 
 @app.route("/create_rental", methods=["POST"])
 def create_rental():
@@ -125,8 +112,8 @@ def create_rental():
         user_id = int(request.form["user_id"])
         game_id = int(request.form["game_id"])
         send_request({"action": "create_rental", "user_id": user_id, "game_id": game_id})
-    except:
-        pass
+    except Exception as e:
+        print("Error creating rental:", e)
     return redirect("/")
 
 @app.route("/return_rental", methods=["POST"])
@@ -134,10 +121,12 @@ def return_rental():
     try:
         rental_id = int(request.form["rental_id"])
         send_request({"action": "return_rental", "rental_id": rental_id})
-    except:
-        pass
+    except Exception as e:
+        print("Error returning rental:", e)
     return redirect("/")
 
-# --- Run Flask server ---
 if __name__ == "__main__":
+    # Ask for login once at start
+    USERNAME = input("Enter server username: ")
+    PASSWORD = input("Enter server password: ")
     app.run(host="0.0.0.0", port=8080)

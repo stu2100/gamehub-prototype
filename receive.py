@@ -1,67 +1,73 @@
 import socket
 import json
+import re
 
-SERVER_HOST = "127.0.0.1"
-SERVER_PORT = 5000
+HOST = "127.0.0.1"
+PORT = 5000
 
-# --- Helper to send request to server ---
-def send_request(request_dict):
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.connect((SERVER_HOST, SERVER_PORT))
-            s.sendall(json.dumps(request_dict).encode())
-            data = s.recv(8192)
-            if not data:
-                print("No response from server")
-                return None
-            return json.loads(data.decode())
-    except Exception as e:
-        print("Error:", e)
-        return None
+def send_request(client, request):
+    client.send(json.dumps(request).encode())
+    response = json.loads(client.recv(8192).decode())
+    return response
 
-# --- Dashboard display ---
-def show_dashboard():
-    response = send_request({"action": "list_dashboard"})
-    if not response:
-        return
+def show_dashboard(client):
+    request = {"action": "list_dashboard"}
+    response = send_request(client, request)
 
     print("\n=== USERS ===")
     for u in response.get("users", []):
-        print(f"ID: {u.get('user_id', 'N/A')}, Name: {u.get('name', 'N/A')}")
+        print(f"ID: {u.get('user_id')}, Name: {u.get('name')}, Email: {u.get('email')}")
 
     print("\n=== GAMES ===")
     for g in response.get("games", []):
-        game_id = g.get("game_id", "N/A")
-        title = g.get("title", "N/A")
         stock = g.get("stock", "N/A")
         available = g.get("available", "N/A")
-        print(f"ID: {game_id}, Title: {title}, Stock: {stock}, Available: {available}")
+        print(f"ID: {g.get('game_id')}, Title: {g.get('title')}, Stock: {stock}, Available: {available}")
 
     print("\n=== RENTALS ===")
     for r in response.get("rentals", []):
-        rental_id = r.get("rental_id", "N/A")
-        user_id = r.get("user_id", "N/A")
-        game_id = r.get("game_id", "N/A")
         returned = r.get("returned", "N/A")
         late_fee = r.get("late_fee", "N/A")
         due_date = r.get("due_date", "N/A")
-        print(f"Rental ID: {rental_id}, User ID: {user_id}, Game ID: {game_id}, Returned: {returned}, Late Fee: ${late_fee}, Due: {due_date}")
+        print(f"Rental ID: {r.get('rental_id')}, User ID: {r.get('user_id')}, Game ID: {r.get('game_id')}, Returned: {returned}, Late Fee: ${late_fee}, Due: {due_date}")
+    print("")
 
-# --- Main menu ---
+def authenticate(client):
+    print("Please log in to GameHub server:")
+    username = input("Username: ")
+    password = input("Password: ")
+    auth_request = {"type": "auth", "username": username, "password": password}
+    client.send(json.dumps(auth_request).encode())
+    auth_response = json.loads(client.recv(1024).decode())
+    if auth_response.get("status") != "ok":
+        print("Authentication failed:", auth_response.get("message"))
+        return False
+    print(auth_response.get("message"))
+    return True
+
 def main():
+    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    client.connect((HOST, PORT))
+
+    if not authenticate(client):
+        client.close()
+        return
+
     while True:
-        print("\n--- GameHub Dashboard ---")
+        print("\n--- GameHub Read-Only Menu ---")
         print("1. Show dashboard")
         print("2. Exit")
+        choice = input("Enter choice: ")
 
-        choice = input("Enter choice: ").strip()
         if choice == "1":
-            show_dashboard()
+            show_dashboard(client)
         elif choice == "2":
-            print("Exiting...")
+            print("Exiting read-only client.")
             break
         else:
-            print("Invalid choice, try again")
+            print("Invalid choice. Try again.")
+
+    client.close()
 
 if __name__ == "__main__":
     main()

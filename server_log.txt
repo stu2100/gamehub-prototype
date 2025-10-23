@@ -1,0 +1,54 @@
+2025-10-23 08:30:51,759 - Error handling client ('127.0.0.1', 36110): Expecting value: line 1 column 1 (char 0)
+2025-10-23 08:30:51,761 - Closed connection: ('127.0.0.1', 36110)
+2025-10-23 08:30:51,783 - Error handling client ('127.0.0.1', 36114): Expecting value: line 1 column 1 (char 0)
+2025-10-23 08:30:51,783 - Closed connection: ('127.0.0.1', 36114)
+2025-10-23 08:30:51,804 - Error handling client ('127.0.0.1', 36124): Expecting value: line 1 column 1 (char 0)
+2025-10-23 08:30:51,804 - Closed connection: ('127.0.0.1', 36124)
+2025-10-23 08:30:51,820 - Error handling client ('127.0.0.1', 36136): Expecting value: line 1 column 1 (char 0)
+2025-10-23 08:30:51,821 - Closed connection: ('127.0.0.1', 36136)
+2025-10-23 08:31:41,076 - Received (auth): {'action': 'add_user', 'name': 'admin'}
+2025-10-23 08:31:41,076 - Closed connection: ('127.0.0.1', 42486)
+2025-10-23 08:32:11,702 - Received (auth): {'action': 'add_game', 'title': 'mario', 'stock': 5}
+2025-10-23 08:32:11,702 - Closed connection: ('127.0.0.1', 50518)
+2025-10-23 08:32:14,367 - Received (auth): {'action': 'list_dashboard'}
+2025-10-23 08:32:14,367 - Closed connection: ('127.0.0.1', 50528)
+2025-10-23 08:34:41,877 - Received (auth): {'type': 'auth', 'username': 'admin', 'password': 'password123'}
+2025-10-23 08:34:48,500 - Received: {'action': 'add_user', 'name': 'Super Mario 3'}
+2025-10-23 08:34:48,500 - Responded: {'status': 'ok', 'message': 'User Super Mario 3 added'}
+2025-10-23 08:35:09,358 - Received: {'action': 'add_user', 'name': 'brian2'}
+2025-10-23 08:35:09,359 - Responded: {'status': 'ok', 'message': 'User brian2 added'}
+2025-10-23 08:35:19,133 - Received: {'action': 'add_game', 'title': 'Final Fantasy V', 'stock': 5}
+2025-10-23 08:35:19,133 - Responded: {'status': 'ok', 'message': 'Game Final Fantasy V added'}
+2025-10-23 08:35:24,638 - Received: {'action': 'create_rental', 'user_id': 1, 'game_id': 1}
+2025-10-23 08:35:24,638 - Responded: {'status': 'ok', 'message': 'Rental 1 created'}
+2025-10-23 08:35:28,227 - Received: {'action': 'list_dashboard'}
+2025-10-23 08:35:28,228 - Responded: {'users': [{'user_id': 1, 'name': 'Super Mario 3'}, {'user_id': 2, 'name': 'brian2'}], 'games': [{'game_id': 1, 'title': 'Final Fantasy V', 'stock': 5, 'available': True}], 'rentals': [{'rental_id': 1, 'user_id': 1, 'game_id': 1, 'returned': False, 'late_fee': 0, 'due_date': '2025-10-30'}]}
+2025-10-23 09:50:10,321 - Received (auth): {'type': 'auth', 'username': 'admin', 'password': 'password123'}
+2025-10-23 09:50:26,057 - Received: {'action': 'add_user', 'name': 'John', 'email': 'john@gmail.com'}
+2025-10-23 09:50:26,057 - Responded: {'status': 'ok', 'message': 'User John added'}
+2025-10-23 10:05:53,935 - Closed connection: ('127.0.0.1', 36846)
+2025-10-23 10:07:28,976 - Received (auth): {'type': 'auth', 'username': 'admin', 'password': 'password123'}
+2025-10-23 10:07:57,656 - Received: {'action': 'add_user', 'name': 'Jamie', 'email': 'jamie@gmail.com', 'password': 'Jamie123!'}
+2025-10-23 10:07:57,656 - Responded: {'status': 'ok', 'message': 'User Jamie added'}
+2025-10-23 10:08:11,782 - Received: {'action': 'add_game', 'title': 'Final Fantasy VI', 'stock': 8}
+2025-10-23 10:08:11,782 - Responded: {'status': 'ok', 'message': 'Game Final Fantasy VI added'}
+2025-10-23 10:08:15,777 - Received: {'action': 'create_rental', 'user_id': 1, 'game_id': 1}
+2025-10-23 10:08:15,777 - Responded: {'status': 'ok', 'message': 'Rental 1 created'}
+2025-10-23 10:08:22,012 - Received: {'action': 'list_dashboard'}
+2025-10-23 10:08:22,012 - Responded: {'users': [{'user_id': 1, 'name': 'John', 'email': 'john@gmail.com'}, {'user_id': 2, 'name': 'Jamie', 'email': 'jamie@gmail.com'}], 'games': [{'game_id': 1, 'title': 'Final Fantasy VI', 'stock': 8, 'available': True}], 'rentals': [{'rental_id': 1, 'user_id': 1, 'game_id': 1, 'returned': False, 'late_fee': 0, 'due_date': '2025-10-30'}]}
+2025-10-23 10:09:57,042 - Error handling client ('127.0.0.1', 38022): Expecting value: line 1 column 1 (char 0)
+2025-10-23 10:09:57,042 - Closed connection: ('127.0.0.1', 38022)
+2025-10-23 10:09:57,057 - Error handling client ('127.0.0.1', 38026): Expecting value: line 1 column 1 (char 0)
+2025-10-23 10:09:57,057 - Closed connection: ('127.0.0.1', 38026)
+2025-10-23 10:09:57,070 - Error handling client ('127.0.0.1', 38036): Expecting value: line 1 column 1 (char 0)
+2025-10-23 10:09:57,070 - Closed connection: ('127.0.0.1', 38036)
+2025-10-23 10:09:57,083 - Error handling client ('127.0.0.1', 38044): Expecting value: line 1 column 1 (char 0)
+2025-10-23 10:09:57,083 - Closed connection: ('127.0.0.1', 38044)
+2025-10-23 10:14:47,949 - Received (auth): {'type': 'auth', 'username': 'admin', 'password': 'password123'}
+2025-10-23 10:14:47,949 - Received: {'action': 'list_dashboard'}
+2025-10-23 10:14:47,949 - Responded: {'users': [{'user_id': 1, 'name': 'John', 'email': 'john@gmail.com'}, {'user_id': 2, 'name': 'Jamie', 'email': 'jamie@gmail.com'}], 'games': [{'game_id': 1, 'title': 'Final Fantasy VI', 'stock': 8, 'available': True}], 'rentals': [{'rental_id': 1, 'user_id': 1, 'game_id': 1, 'returned': False, 'late_fee': 0, 'due_date': '2025-10-30'}]}
+2025-10-23 10:14:47,950 - Closed connection: ('127.0.0.1', 53586)
+2025-10-23 10:18:06,035 - Received (auth): {'type': 'auth', 'username': 'admin', 'password': 'password123'}
+2025-10-23 10:18:06,036 - Received: {'action': 'list_dashboard'}
+2025-10-23 10:18:06,036 - Responded: {'users': [{'user_id': 1, 'name': 'John', 'email': 'john@gmail.com'}, {'user_id': 2, 'name': 'Jamie', 'email': 'jamie@gmail.com'}], 'games': [{'game_id': 1, 'title': 'Final Fantasy VI', 'stock': 8, 'available': True}], 'rentals': [{'rental_id': 1, 'user_id': 1, 'game_id': 1, 'returned': False, 'late_fee': 0, 'due_date': '2025-10-30'}]}
+2025-10-23 10:18:06,037 - Closed connection: ('127.0.0.1', 39620)
