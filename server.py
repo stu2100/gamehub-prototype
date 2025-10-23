@@ -1,129 +1,177 @@
 import socket
 import json
-import threading
+from threading import Thread
+from datetime import datetime, timedelta
 
-# ----- Data Stores -----
-users = []
-games = []
-rentals = []
+class GameHubServer:
+    def __init__(self, host="127.0.0.1", port=5000):
+        self.host = host
+        self.port = port
+        self.users = {}
+        self.games = {}
+        self.rentals = {}
+        self.next_user_id = 1
+        self.next_game_id = 1
+        self.next_rental_id = 1
 
-# ----- Helper Functions -----
-def handle_request(data):
-    """Processes client JSON commands."""
-    try:
-        request = json.loads(data)
+    def start(self):
+        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_socket.bind((self.host, self.port))
+        server_socket.listen(5)
+        print(f"Server started on {self.host}:{self.port}")
+
+        while True:
+            client_socket, addr = server_socket.accept()
+            Thread(target=self.handle_client, args=(client_socket, addr)).start()
+
+    def handle_client(self, client_socket, addr):
+        try:
+            data = client_socket.recv(8192)
+            if not data:
+                client_socket.close()
+                return
+
+            request = json.loads(data.decode())
+            response = self.handle_request(request)
+            client_socket.sendall(json.dumps(response).encode())
+        except Exception as e:
+            print(f"Error handling client {addr}: {e}")
+        finally:
+            client_socket.close()
+
+    def handle_request(self, request):
         action = request.get("action")
+        response = {"status": "error", "message": "Unknown action"}
 
+        # ---- Add User ----
         if action == "add_user":
             name = request.get("name")
             if not name:
-                return {"status": "error", "message": "Missing user name."}
-            user_id = len(users) + 1
-            users.append({"user_id": user_id, "name": name})
-            return {"status": "success", "message": f"User '{name}' added.", "user_id": user_id}
+                response = {"status": "error", "message": "Name is required"}
+            else:
+                user_id = self.next_user_id
+                self.users[user_id] = {"user_id": user_id, "name": name}
+                self.next_user_id += 1
+                response = {"status": "success", "message": f"User '{name}' added", "user_id": user_id}
 
+        # ---- Add Game ----
         elif action == "add_game":
             title = request.get("title")
+            stock = request.get("stock", 1)
             if not title:
-                return {"status": "error", "message": "Missing game title."}
-            game_id = len(games) + 1
-            games.append({"game_id": game_id, "title": title, "available": True})
-            return {"status": "success", "message": f"Game '{title}' added.", "game_id": game_id}
+                response = {"status": "error", "message": "Title is required"}
+            elif not isinstance(stock, int) or stock < 0:
+                response = {"status": "error", "message": "Invalid stock value"}
+            else:
+                game_id = self.next_game_id
+                self.games[game_id] = {
+                    "game_id": game_id,
+                    "title": title,
+                    "stock": stock,
+                    "available": stock > 0
+                }
+                self.next_game_id += 1
+                response = {"status": "success", "message": f"Game '{title}' added", "game_id": game_id}
 
+        # ---- Create Rental ----
         elif action == "create_rental":
             user_id = request.get("user_id")
             game_id = request.get("game_id")
 
-            # Validate
-            user = next((u for u in users if u["user_id"] == user_id), None)
-            game = next((g for g in games if g["game_id"] == game_id), None)
+            if user_id not in self.users:
+                response = {"status": "error", "message": f"User ID {user_id} not found"}
+            elif game_id not in self.games:
+                response = {"status": "error", "message": f"Game ID {game_id} not found"}
+            elif self.games[game_id]["stock"] <= 0:
+                response = {"status": "error", "message": f"Game ID {game_id} is out of stock"}
+            else:
+                rental_id = self.next_rental_id
+                self.rentals[rental_id] = {
+                    "rental_id": rental_id,
+                    "user_id": user_id,
+                    "game_id": game_id,
+                    "returned": False,
+                    "rental_date": datetime.now().isoformat(),
+                    "due_date": (datetime.now() + timedelta(days=7)).isoformat(),
+                    "late_fee": 0
+                }
+                self.games[game_id]["stock"] -= 1
+                self.games[game_id]["available"] = self.games[game_id]["stock"] > 0
+                self.next_rental_id += 1
+                response = {"status": "success", "message": "Rental created", "rental_id": rental_id}
 
-            if not user:
-                return {"status": "error", "message": "User not found."}
-            if not game:
-                return {"status": "error", "message": "Game not found."}
-            if not game["available"]:
-                return {"status": "error", "message": "Game already rented."}
+        # ---- Delete User ----
+        elif action == "delete_user":
+            user_id = request.get("user_id")
+            if user_id is None:
+                response = {"status": "error", "message": "user_id missing"}
+            elif user_id not in self.users:
+                response = {"status": "error", "message": f"User ID {user_id} not found"}
+            else:
+                del self.users[user_id]
+                response = {"status": "success", "message": f"User ID {user_id} deleted"}
 
-            rental_id = len(rentals) + 1
-            rentals.append({
-                "rental_id": rental_id,
-                "user_id": user_id,
-                "game_id": game_id,
-                "returned": False
-            })
-            game["available"] = False
-            return {"status": "success", "message": f"Rental created for user {user_id} and game {game_id}."}
+        # ---- Delete Game ----
+        elif action == "delete_game":
+            game_id = request.get("game_id")
+            if game_id is None:
+                response = {"status": "error", "message": "game_id missing"}
+            elif game_id not in self.games:
+                response = {"status": "error", "message": f"Game ID {game_id} not found"}
+            else:
+                del self.games[game_id]
+                response = {"status": "success", "message": f"Game ID {game_id} deleted"}
 
+        # ---- Update Game Stock ----
+        elif action == "update_stock":
+            game_id = request.get("game_id")
+            new_stock = request.get("stock")
+            if game_id is None:
+                response = {"status": "error", "message": "game_id missing"}
+            elif game_id not in self.games:
+                response = {"status": "error", "message": f"Game ID {game_id} not found"}
+            elif not isinstance(new_stock, int) or new_stock < 0:
+                response = {"status": "error", "message": "Invalid stock value"}
+            else:
+                self.games[game_id]["stock"] = new_stock
+                self.games[game_id]["available"] = new_stock > 0
+                response = {"status": "success", "message": f"Game ID {game_id} stock updated to {new_stock}"}
+
+        # ---- Return Rental ----
         elif action == "return_rental":
             rental_id = request.get("rental_id")
-            rental = next((r for r in rentals if r["rental_id"] == rental_id), None)
+            if rental_id not in self.rentals:
+                response = {"status": "error", "message": f"Rental ID {rental_id} not found"}
+            elif self.rentals[rental_id]["returned"]:
+                response = {"status": "error", "message": "Rental already returned"}
+            else:
+                rental = self.rentals[rental_id]
+                rental["returned"] = True
+                return_date = datetime.now()
+                due_date = datetime.fromisoformat(rental["due_date"])
+                days_late = (return_date - due_date).days
+                late_fee = max(0, days_late * 2)  # $2 per late day
+                rental["late_fee"] = late_fee
 
-            if not rental:
-                return {"status": "error", "message": "Rental not found."}
-            if rental["returned"]:
-                return {"status": "error", "message": "Rental already returned."}
+                # Increment game stock
+                game_id = rental["game_id"]
+                if game_id in self.games:
+                    self.games[game_id]["stock"] += 1
+                    self.games[game_id]["available"] = True
 
-            rental["returned"] = True
-            # Mark the game available again
-            for g in games:
-                if g["game_id"] == rental["game_id"]:
-                    g["available"] = True
-                    break
+                response = {"status": "success", "message": f"Rental returned. Late fee: ${late_fee}"}
 
-            return {"status": "success", "message": f"Rental {rental_id} returned successfully."}
-
+        # ---- Dashboard / List ----
         elif action == "list_dashboard":
-            return {
+            response = {
                 "status": "success",
-                "users": users,
-                "games": games,
-                "rentals": rentals
+                "users": list(self.users.values()),
+                "games": list(self.games.values()),
+                "rentals": list(self.rentals.values())
             }
 
-        else:
-            return {"status": "error", "message": "Unknown action."}
-
-    except json.JSONDecodeError:
-        return {"status": "error", "message": "Invalid JSON."}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
-
-# ----- Client Handler -----
-def client_thread(conn, addr):
-    print(f"Connected by {addr}")
-    with conn:
-        while True:
-            data = conn.recv(1024)
-            if not data:
-                break
-            response = handle_request(data.decode())
-            conn.sendall(json.dumps(response).encode())
-    print(f"Connection closed: {addr}")
-
-
-# ----- Main Server Loop -----
-def start_server(host="127.0.0.1", port=5000):
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.bind((host, port))
-    server_socket.listen()
-    print(f"Server listening on {host}:{port}")
-
-    try:
-        while True:
-            conn, addr = server_socket.accept()
-            thread = threading.Thread(target=client_thread, args=(conn, addr))
-            thread.start()
-    except KeyboardInterrupt:
-        print("\nServer shutting down...")
-    finally:
-        server_socket.close()
-
+        return response
 
 if __name__ == "__main__":
-    start_server()
-
-
-
-
+    server = GameHubServer()
+    server.start()
