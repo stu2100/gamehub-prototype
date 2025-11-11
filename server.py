@@ -33,6 +33,7 @@ def calculate_late_fee(rental):
         return max(0, days_late * 2)  # $2 per day late
     return 0
 
+
 def handle_client(client_socket, address):
     global next_user_id, next_game_id, next_rental_id
     try:
@@ -100,17 +101,28 @@ def handle_client(client_socket, address):
                     game_id = request.get("game_id")
                     if user_id is None or game_id is None:
                         raise KeyError("user_id or game_id missing")
-                    rental = {
-                        "rental_id": next_rental_id,
-                        "user_id": user_id,
-                        "game_id": game_id,
-                        "returned": False,
-                        "late_fee": 0,
-                        "due_date": (datetime.datetime.now() + datetime.timedelta(days=7)).strftime("%Y-%m-%d")
-                    }
-                    rentals.append(rental)
-                    next_rental_id += 1
-                    response = {"status": "ok", "message": f"Rental {rental['rental_id']} created"}
+
+                    game = next((g for g in games if g["game_id"] == game_id), None)
+                    if not game:
+                        response = {"status": "error", "message": "Game not found"}
+                    elif game["stock"] <= 0:
+                        response = {"status": "error", "message": "Game not available"}
+                    else:
+                        # Reduce stock and update availability
+                        game["stock"] -= 1
+                        game["available"] = game["stock"] > 0
+
+                        rental = {
+                            "rental_id": next_rental_id,
+                            "user_id": user_id,
+                            "game_id": game_id,
+                            "returned": False,
+                            "late_fee": 0,
+                            "due_date": (datetime.datetime.now() + datetime.timedelta(days=7)).strftime("%Y-%m-%d")
+                        }
+                        rentals.append(rental)
+                        next_rental_id += 1
+                        response = {"status": "ok", "message": f"Rental {rental['rental_id']} created"}
 
                 elif action == "return_rental":
                     rental_id = request.get("rental_id")
@@ -121,6 +133,13 @@ def handle_client(client_socket, address):
                         rental["returned"] = True
                         rental["return_date"] = datetime.datetime.now().strftime("%Y-%m-%d")
                         rental["late_fee"] = calculate_late_fee(rental)
+
+                        # Increase stock for returned game
+                        game = next((g for g in games if g["game_id"] == rental["game_id"]), None)
+                        if game:
+                            game["stock"] += 1
+                            game["available"] = True
+
                         response = {"status": "ok", "message": f"Rental {rental_id} returned"}
                     else:
                         response = {"status": "error", "message": "Rental not found"}
@@ -147,6 +166,7 @@ def handle_client(client_socket, address):
         client_socket.close()
         logging.info(f"Closed connection: {address}")
 
+
 # --- Main server ---
 def main():
     host = "0.0.0.0"
@@ -160,6 +180,7 @@ def main():
     while True:
         client_socket, address = server.accept()
         threading.Thread(target=handle_client, args=(client_socket, address)).start()
+
 
 if __name__ == "__main__":
     main()
